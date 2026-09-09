@@ -1,4 +1,4 @@
-﻿# Pen Assembly Quality Inspection System
+# Pen Assembly Quality Inspection System
 
 An automated Computer Vision & Deep Learning inspection system for manufacturing assembly lines. It tracks and verifies the 5 sequential stages of pen assembly in real time, detecting missing components and out-of-order steps.
 
@@ -76,19 +76,24 @@ python evaluate.py
 python main.py --eval
 ```
 
-### Option C: Live Webcam Inspection HUD
+### Option C: Live Inspection HUD (Webcam or DroidCam Phone Camera)
 Launches the real-time inspection interface with component checklist and temporal consensus smoothing:
 ```bash
+# Using default built-in laptop webcam (index 0):
 python live_demo.py
-# or:
-python main.py --demo
+
+# Using DroidCam via USB/PC Client (index 1 or 2):
+python live_demo.py --camera 1
+
+# Using DroidCam via direct WiFi IP (no PC client needed):
+python live_demo.py --camera http://<PHONE_IP>:4747/video
 ```
 - Press **`r`** to reset the assembly sequence back to Step 0.
 - Press **`q`** to quit.
 
 ### Option D: Inspect a Single Image
 ```bash
-python live_demo.py --image test_images/state_2_refill_inserted/IMG-20260909-WA0203 (1).jpg
+python live_demo.py --image "test_images/state_2_refill_inserted/IMG-20260909-WA0203 (1).jpg"
 ```
 The annotated result with bounding boxes and state readout will be saved to `demo_output.jpg`.
 

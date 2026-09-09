@@ -99,13 +99,22 @@ def run_image(image_path, detector, sm):
     print(f"Annotated frame saved to '{out_path}'")
 
 
-def run_webcam(camera_idx, detector, sm):
-    cap = cv2.VideoCapture(camera_idx)
+def run_webcam(camera_source, detector, sm):
+    # If camera_source is an integer or numeric string ("0", "1"), convert to int
+    if isinstance(camera_source, str) and camera_source.isdigit():
+        camera_source = int(camera_source)
+
+    cap = cv2.VideoCapture(camera_source)
     if not cap.isOpened():
-        print(f"ERROR: Could not open camera {camera_idx}")
+        print(f"ERROR: Could not open camera source: {camera_source}")
+        print("Tip: If using DroidCam client, try device index 1 or 2:")
+        print("     python live_demo.py --camera 1")
+        print("     Or use the direct WiFi IP URL from the DroidCam phone app:")
+        print("     python live_demo.py --camera http://<PHONE_IP>:4747/video")
         return
 
-    print("Live assembly checker started. Press 'q' to quit, 'r' to reset sequence.")
+    print(f"Live assembly checker started on source [{camera_source}].")
+    print("Press 'q' to quit, 'r' to reset sequence.")
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -129,7 +138,12 @@ def run_webcam(camera_idx, detector, sm):
 def main():
     parser = argparse.ArgumentParser(description="Live Pen Assembly Inspection")
     parser.add_argument("--image", type=str, default=None, help="Path to single test image")
-    parser.add_argument("--camera", type=int, default=0, help="Webcam device index (default 0)")
+    parser.add_argument(
+        "--camera",
+        type=str,
+        default="0",
+        help="Webcam device index (0, 1, 2) or DroidCam IP URL (e.g. http://192.168.1.5:4747/video)",
+    )
     args = parser.parse_args()
 
     detector = ComponentDetector()

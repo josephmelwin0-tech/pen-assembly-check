@@ -1,4 +1,4 @@
-﻿"""
+"""
 Pen Assembly Quality Inspection System
 Main entrypoint for evaluating, running live demos, or training.
 
@@ -17,6 +17,7 @@ def main():
     parser = argparse.ArgumentParser(description="Pen Assembly Quality Checker")
     parser.add_argument("--eval", action="store_true", help="Run benchmark evaluation on test dataset")
     parser.add_argument("--demo", action="store_true", help="Launch live webcam inspection HUD")
+    parser.add_argument("--camera", type=str, default="0", help="Webcam device index (0, 1, 2) or DroidCam IP URL")
     parser.add_argument("--image", type=str, default=None, help="Inspect a single image file")
     parser.add_argument("--train", action="store_true", help="Retrain YOLO classification models")
     args = parser.parse_args()
@@ -30,7 +31,7 @@ def main():
         from live_demo import run_webcam
         from component_detector import ComponentDetector
         from state_machine import AssemblyStateMachine
-        run_webcam(0, ComponentDetector(), AssemblyStateMachine())
+        run_webcam(args.camera, ComponentDetector(), AssemblyStateMachine())
         return
 
     if args.image:
