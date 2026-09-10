@@ -25,6 +25,7 @@ videos/
 # Temporary demo outputs and generated datasets
 demo_output.jpg
 yolo_dataset/
+yolo_tip_dataset/
 
 # IDE & Editor configs
 .idea/

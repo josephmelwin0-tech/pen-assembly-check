@@ -15,12 +15,14 @@ class ComponentDetector:
     def extract_tip_and_endpoints(self, img):
         """
         Locates the blue grip, backcap, and computes the tip bounding box.
+        Selects the farthest candidate contour from the grip along the pen axis
+        to guarantee the rear back cap is accurately differentiated from the front top cap.
         """
         h, w = img.shape[:2]
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         blue_mask = cv2.inRange(hsv, np.array([90, 50, 40]), np.array([135, 255, 255]))
         cnts, _ = cv2.findContours(blue_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        valid = [c for c in cnts if cv2.contourArea(c) > 120]
+        valid = [c for c in cnts if cv2.contourArea(c) > 60]
         if not valid:
             return None, False, (0, 0, w, h)
 
@@ -29,12 +31,18 @@ class ComponentDetector:
         gx, gy, gw, gh = cv2.boundingRect(grip)
         gcx, gcy = gx + gw / 2.0, gy + gh / 2.0
 
+        # Find backcap candidates: pick the candidate farthest from grip along pen body
         backcap = None
+        cand_dists = []
         for cand in valid[1:]:
             bx, by, bw, bh = cv2.boundingRect(cand)
-            if np.hypot(gcx - (bx + bw / 2.0), gcy - (by + bh / 2.0)) > 120:
-                backcap = cand
-                break
+            d = np.hypot(gcx - (bx + bw / 2.0), gcy - (by + bh / 2.0))
+            if d > 100:
+                cand_dists.append((d, cand))
+
+        if cand_dists:
+            cand_dists.sort(key=lambda x: x[0], reverse=True)
+            backcap = cand_dists[0][1]
 
         has_backcap = backcap is not None
 
@@ -58,7 +66,10 @@ class ComponentDetector:
 
     def analyze(self, img_or_path):
         """
-        Analyzes an image and returns component breakdown and state prediction.
+        Analyzes an image using dual-expert mutual corroboration:
+          - Expert 1: Whole-Pen Classifier (runs_classify/pen_states/weights/best.pt)
+          - Expert 2: High-Resolution Tip Classifier (runs_classify/tip_classifier/weights/best.pt)
+          - Physical Anchor: HSV Rear Back Cap Detector
         """
         if isinstance(img_or_path, str):
             img = cv2.imread(img_or_path)
@@ -74,14 +85,14 @@ class ComponentDetector:
 
         tip_crop, has_backcap, tip_box = self.extract_tip_and_endpoints(img)
 
-        # Tip classification
+        # 1. High-resolution tip classification
         tip_pred, tip_conf = None, 0.0
         if self.tip_model and tip_crop is not None and tip_crop.shape[0] > 20 and tip_crop.shape[1] > 20:
             res_tip = self.tip_model.predict(tip_crop, verbose=False)[0]
             tip_pred = res_tip.names[res_tip.probs.top1]
             tip_conf = float(res_tip.probs.top1conf)
 
-        # Whole pen classification (on focused pen crop)
+        # 2. Whole pen classification (on focused pen crop)
         from pen_cropper import crop_pen
         pen_crop = crop_pen(img)
         pen_pred, pen_conf = None, 0.0
@@ -90,39 +101,90 @@ class ComponentDetector:
             pen_pred = res_pen.names[res_pen.probs.top1]
             pen_conf = float(res_pen.probs.top1conf)
 
-        # PRIMARY DECISION: Driven by the 96% accurate video-trained YOLOv8s model
-        if pen_pred is not None and pen_conf >= 0.40:
-            state = pen_pred
-            conf = pen_conf
+        # 3. DUAL-EXPERT MUTUAL CORROBORATION
+        # ---------------------------------------------------------------------
+        # Rule 1: Mutual Corroboration for State 4 (Top Cap Attached)
+        # Prevents unilateral declaration of completion if the tip model still sees
+        # the white cone cap, bare needle refill, or open barrel.
+        if pen_pred == "state_4_topcap_on":
+            if tip_pred == "topcap_tip":
+                state = "state_4_topcap_on"
+                conf = (pen_conf + tip_conf) / 2.0
+            elif tip_pred == "conecap_tip":
+                state = "state_3_conecap_on"
+                conf = tip_conf
+            elif tip_pred == "refill_tip":
+                state = "state_2_refill_inserted"
+                conf = tip_conf
+            elif tip_pred == "empty_tip":
+                state = "state_1_backcap_on" if has_backcap else "state_0_barrel_only"
+                conf = tip_conf
+            else:
+                state = "state_4_topcap_on" if pen_conf >= 0.90 else "state_3_conecap_on"
+                conf = pen_conf
 
-            # Sanity-check edge cases with physical anchors:
-            # If predicted backcap_on with low confidence (<0.70) but no backcap detected by HSV
-            if pen_pred == "state_1_backcap_on" and pen_conf < 0.70 and not has_backcap:
-                state = "state_0_barrel_only"
-                conf = 0.75
-            # If predicted barrel_only with low confidence (<0.70) but backcap is clearly detected
-            elif pen_pred == "state_0_barrel_only" and pen_conf < 0.70 and has_backcap:
+        # Rule 2: Tip model strongly detects top cap
+        elif tip_pred == "topcap_tip" and tip_conf >= 0.70:
+            state = "state_4_topcap_on"
+            conf = (pen_conf + tip_conf) / 2.0 if pen_pred == "state_4_topcap_on" else tip_conf
+
+        # Rule 3: State 3 (Front Cone Cap Attached)
+        elif tip_pred == "conecap_tip" and tip_conf >= 0.60:
+            state = "state_3_conecap_on"
+            conf = (pen_conf + tip_conf) / 2.0 if pen_pred == "state_3_conecap_on" else tip_conf
+
+        elif pen_pred == "state_3_conecap_on":
+            if tip_pred == "refill_tip" and tip_conf >= 0.70:
+                state = "state_2_refill_inserted"
+                conf = tip_conf
+            elif tip_pred == "empty_tip" and tip_conf >= 0.80:
+                state = "state_1_backcap_on" if has_backcap else "state_0_barrel_only"
+                conf = tip_conf
+            else:
+                state = "state_3_conecap_on"
+                conf = pen_conf
+
+        # Rule 4: State 2 (Ink Refill Inserted)
+        elif tip_pred == "refill_tip" and tip_conf >= 0.65 and (has_backcap or pen_pred == "state_2_refill_inserted"):
+            state = "state_2_refill_inserted"
+            conf = (pen_conf + tip_conf) / 2.0 if pen_pred == "state_2_refill_inserted" else tip_conf
+
+        elif pen_pred == "state_2_refill_inserted":
+            if tip_pred == "empty_tip" and tip_conf >= 0.85:
+                state = "state_1_backcap_on" if has_backcap else "state_0_barrel_only"
+                conf = tip_conf
+            else:
+                state = "state_2_refill_inserted"
+                conf = pen_conf
+
+        # Rule 5: States 0 and 1 (Barrel Body & Rear Back Cap)
+        elif pen_pred in ["state_0_barrel_only", "state_1_backcap_on"]:
+            if has_backcap:
                 state = "state_1_backcap_on"
-                conf = 0.75
-        elif tip_pred is not None and tip_conf > 0.60:
-            # Fallback to tip model only if pen model is unconfident
-            tip_to_state = {
-                "topcap_tip": "state_4_topcap_on",
-                "conecap_tip": "state_3_conecap_on",
-                "refill_tip": "state_2_refill_inserted",
-                "empty_tip": "state_1_backcap_on" if has_backcap else "state_0_barrel_only",
-            }
-            state = tip_to_state.get(tip_pred, "state_0_barrel_only")
-            conf = tip_conf
+                conf = max(pen_conf, 0.75)
+            else:
+                state = "state_0_barrel_only"
+                conf = max(pen_conf, 0.75)
+
+        # Fallback
         else:
             state = pen_pred or "state_0_barrel_only"
-            conf = max(pen_conf, 0.50)
+            conf = pen_conf
 
         # Physical component presence
         has_barrel = True
-        has_refill = state in ["state_2_refill_inserted", "state_3_conecap_on", "state_4_topcap_on"]
-        has_conecap = state in ["state_3_conecap_on", "state_4_topcap_on"]
-        has_topcap = state == "state_4_topcap_on"
+        has_refill = (
+            tip_pred in ["refill_tip", "conecap_tip", "topcap_tip"]
+            or state in ["state_2_refill_inserted", "state_3_conecap_on", "state_4_topcap_on"]
+        )
+        has_conecap = (
+            tip_pred in ["conecap_tip", "topcap_tip"]
+            or state in ["state_3_conecap_on", "state_4_topcap_on"]
+        )
+        has_topcap = (
+            (tip_pred == "topcap_tip" and state == "state_4_topcap_on")
+            or (state == "state_4_topcap_on" and conf >= 0.85)
+        )
 
         return {
             "predicted_state": state,

@@ -117,8 +117,12 @@ def draw_overlay(frame, result, state_machine, smoothed=True):
     tip_box = result.get("tip_box")
     if tip_box:
         tx, ty, tw, th = tip_box
+        sig = result.get("signals", {})
+        tip_lbl = sig.get("tip_pred")
+        tip_c = sig.get("tip_conf", 0.0)
+        label_text = f"TIP: {tip_lbl} ({tip_c*100:.0f}%)" if tip_lbl else "TIP ROI"
         cv2.rectangle(frame, (tx, ty), (tx + tw, ty + th), (0, 255, 255), 2)
-        cv2.putText(frame, "TIP ROI", (tx, max(ty - 8, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+        cv2.putText(frame, label_text, (tx, max(ty - 8, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
     return frame
 
