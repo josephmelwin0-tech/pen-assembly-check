@@ -90,43 +90,35 @@ class ComponentDetector:
             pen_pred = res_pen.names[res_pen.probs.top1]
             pen_conf = float(res_pen.probs.top1conf)
 
-        # State 4: Top cap on
-        if pen_pred == "state_4_topcap_on" and pen_conf > 0.4:
-            state = "state_4_topcap_on"
+        # PRIMARY DECISION: Driven by the 96% accurate video-trained YOLOv8s model
+        if pen_pred is not None and pen_conf >= 0.40:
+            state = pen_pred
             conf = pen_conf
-        elif tip_pred == "topcap_tip" and tip_conf > 0.5:
-            state = "state_4_topcap_on"
-            conf = tip_conf
-        # State 3: Cone cap on
-        elif tip_pred == "conecap_tip" and tip_conf > 0.55:
-            state = "state_3_conecap_on"
-            conf = tip_conf
-        elif pen_pred == "state_3_conecap_on" and pen_conf > 0.6:
-            state = "state_3_conecap_on"
-            conf = pen_conf
-        # State 0 vs 1: Empty tip
-        elif tip_pred == "empty_tip" and tip_conf > 0.5:
-            if has_backcap:
-                state = "state_1_backcap_on"
-                conf = tip_conf
-            else:
-                state = "state_0_barrel_only"
-                conf = tip_conf
-        # State 2: Refill inserted
-        elif tip_pred == "refill_tip" and tip_conf > 0.45:
-            if not has_backcap and pen_pred == "state_0_barrel_only" and pen_conf > 0.7:
-                state = "state_0_barrel_only"
-                conf = pen_conf
-            else:
-                state = "state_2_refill_inserted"
-                conf = tip_conf
-        elif not has_backcap:
-            state = "state_0_barrel_only"
-            conf = 0.85
-        else:
-            state = "state_1_backcap_on"
-            conf = 0.85
 
+            # Sanity-check edge cases with physical anchors:
+            # If predicted backcap_on with low confidence (<0.70) but no backcap detected by HSV
+            if pen_pred == "state_1_backcap_on" and pen_conf < 0.70 and not has_backcap:
+                state = "state_0_barrel_only"
+                conf = 0.75
+            # If predicted barrel_only with low confidence (<0.70) but backcap is clearly detected
+            elif pen_pred == "state_0_barrel_only" and pen_conf < 0.70 and has_backcap:
+                state = "state_1_backcap_on"
+                conf = 0.75
+        elif tip_pred is not None and tip_conf > 0.60:
+            # Fallback to tip model only if pen model is unconfident
+            tip_to_state = {
+                "topcap_tip": "state_4_topcap_on",
+                "conecap_tip": "state_3_conecap_on",
+                "refill_tip": "state_2_refill_inserted",
+                "empty_tip": "state_1_backcap_on" if has_backcap else "state_0_barrel_only",
+            }
+            state = tip_to_state.get(tip_pred, "state_0_barrel_only")
+            conf = tip_conf
+        else:
+            state = pen_pred or "state_0_barrel_only"
+            conf = max(pen_conf, 0.50)
+
+        # Physical component presence
         has_barrel = True
         has_refill = state in ["state_2_refill_inserted", "state_3_conecap_on", "state_4_topcap_on"]
         has_conecap = state in ["state_3_conecap_on", "state_4_topcap_on"]
@@ -138,8 +130,8 @@ class ComponentDetector:
             "components": {
                 "barrel": has_barrel,
                 "back_cap": has_backcap,
-                "refill": has_refill or has_conecap or has_topcap,
-                "cone_cap": has_conecap or has_topcap,
+                "refill": has_refill,
+                "cone_cap": has_conecap,
                 "top_cap": has_topcap,
             },
             "signals": {

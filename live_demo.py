@@ -16,19 +16,15 @@ from state_machine import AssemblyStateMachine
 
 def draw_overlay(frame, result, state_machine, smoothed=True):
     """
-    Draws a clean industrial inspection HUD onto the frame.
-    Supports temporal smoothing for video streams to prevent flicker.
+    Draws an industrial assembly quality inspection HUD onto the frame.
+    Strictly enforces sequential assembly order, highlights skipped steps in RED,
+    and displays verified progress checklists.
     """
     h, w = frame.shape[:2]
     overlay = frame.copy()
 
-    # Draw semi-transparent header bar
-    cv2.rectangle(overlay, (0, 0), (w, 140), (20, 20, 20), -1)
-    cv2.addWeighted(overlay, 0.75, frame, 0.25, 0, frame)
-
     state = result.get("predicted_state", "unknown")
     conf = result.get("confidence", 0.0)
-    comps = result.get("components", {})
 
     if smoothed:
         status, detail, consensus_state, votes_ratio = state_machine.update_smoothed(state)
@@ -38,41 +34,84 @@ def draw_overlay(frame, result, state_machine, smoothed=True):
         votes_ratio = "1/1"
         display_state = state
 
-    # Color coding
-    if status == "error":
-        status_color = (50, 50, 220)   # Red
-    elif state_machine.is_complete():
-        status_color = (60, 220, 60)   # Green
+    is_error = status == "error" or state_machine.error_active
+    is_done = state_machine.is_complete()
+
+    # Determine header banner color and border
+    if is_error:
+        header_color = (20, 20, 180)   # Crimson Red
+        border_color = (0, 0, 255)
+        cv2.rectangle(frame, (0, 0), (w, h), border_color, 4)
+    elif is_done:
+        header_color = (20, 130, 20)   # Forest Green
+        border_color = (0, 220, 0)
+        cv2.rectangle(frame, (0, 0), (w, h), border_color, 4)
     elif status == "advanced":
-        status_color = (0, 215, 255)   # Gold
+        header_color = (0, 130, 180)   # Amber / Gold
     else:
-        status_color = (220, 180, 50)  # Cyan/Blue
+        header_color = (25, 25, 25)    # Industrial Dark Gray
 
-    # Status Header
-    cv2.putText(frame, f"STATE: {display_state.upper()}", (20, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (255, 255, 255), 2)
-    cv2.putText(frame, f"CONF: {conf*100:.1f}% | STABILITY: {votes_ratio}", (20, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 2)
+    # Draw semi-transparent header bar (taller for readability)
+    header_h = 145
+    cv2.rectangle(overlay, (0, 0), (w, header_h), header_color, -1)
+    cv2.addWeighted(overlay, 0.80, frame, 0.20, 0, frame)
 
-    status_text = f"STATUS: {status.upper()}"
-    if detail and detail != "stabilizing":
-        status_text += f" ({detail})"
-    elif detail == "stabilizing":
-        status_text += " (STABILIZING...)"
-    cv2.putText(frame, status_text, (20, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+    # Calculate horizontal layout split
+    panel_w = 230 if w >= 550 else 180
+    start_x = max(w - panel_w, int(w * 0.55))
 
-    # Component Checklist on the right
-    comp_names = [
-        ("Barrel", comps.get("barrel", False)),
-        ("Back Cap", comps.get("back_cap", False)),
-        ("Refill", comps.get("refill", False)),
-        ("Cone Cap", comps.get("cone_cap", False)),
-        ("Top Cap", comps.get("top_cap", False)),
-    ]
+    # --- Header Information (Left Side) ---
+    max_text_w = start_x - 15
+    if is_error:
+        cv2.putText(frame, "SEQUENCE REJECTED!", (15, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+        err_msg = detail or state_machine.error_detail or "Sequence error detected"
+        # Truncate if very long
+        if len(err_msg) > 38 and w < 700:
+            err_msg = err_msg[:35] + "..."
+        cv2.putText(frame, err_msg, (15, 68), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (200, 230, 255), 1)
+        cv2.putText(frame, f"Detected: {display_state.upper()} ({conf*100:.0f}%)", (15, 98), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 1)
+        cv2.putText(frame, "Fix missing part or press 'r' to reset", (15, 128), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 255), 1)
+    elif is_done:
+        cv2.putText(frame, "100% COMPLETE & VERIFIED!", (15, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+        cv2.putText(frame, "All 5 steps correctly assembled in order.", (15, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (220, 255, 220), 1)
+        cv2.putText(frame, "READY FOR NEXT PEN - Press 'r' to reset", (15, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
+    else:
+        cur_title = state_machine.get_step_title(state_machine.current_index)
+        cv2.putText(frame, f"INSPECTION: {cur_title.upper()}", (15, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.70, (255, 255, 255), 2)
+        cv2.putText(frame, f"LIVE: {display_state.upper()} ({conf*100:.0f}%)", (15, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1)
+        next_step = state_machine.get_step_title(state_machine.current_index + 1)
+        stat_color = (0, 215, 255) if status == "advanced" else (220, 180, 50)
+        cv2.putText(frame, f"STATUS: {status.upper()} (Dwell: {votes_ratio})", (15, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.55, stat_color, 1)
+        cv2.putText(frame, f"Next required: [{next_step}]", (15, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 180, 180), 1)
 
-    start_x = max(w - 320, 300)
-    for i, (name, present) in enumerate(comp_names):
-        check_mark = "[x]" if present else "[ ]"
-        col = (60, 230, 60) if present else (120, 120, 120)
-        cv2.putText(frame, f"{check_mark} {name}", (start_x, 30 + i * 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
+    # --- Sequential Assembly Pipeline Checklist (Right Side) ---
+    # Draw right panel semi-transparent container
+    cv2.rectangle(overlay, (start_x - 10, 5), (w - 5, header_h - 5), (10, 10, 10), -1)
+    cv2.addWeighted(overlay, 0.60, frame, 0.40, 0, frame)
+
+    steps = state_machine.get_steps_for_hud()
+    for i, s in enumerate(steps):
+        st = s["status"]
+        if st == "verified":
+            tag = "[PASS] "
+            col = (60, 235, 60)   # Green
+        elif st == "skipped":
+            tag = "[MISS] "
+            col = (40, 40, 255)   # Bright Red
+        elif st == "current":
+            tag = "[NOW ] "
+            col = (240, 210, 40)  # Cyan
+        elif st == "error_current":
+            tag = "[BLCK] "
+            col = (50, 150, 255)  # Orange
+        else:
+            tag = "[    ] "
+            col = (140, 140, 140) # Dim Gray
+
+        # Shorten step label for compact display
+        title = s["title"].replace("1. ", "").replace("2. ", "").replace("3. ", "").replace("4. ", "").replace("5. ", "")
+        text = f"{tag}{i+1}.{title}"
+        cv2.putText(frame, text, (start_x, 26 + i * 23), cv2.FONT_HERSHEY_SIMPLEX, 0.48, col, 2 if st in ["verified", "skipped"] else 1)
 
     # Highlight tip box if available
     tip_box = result.get("tip_box")
