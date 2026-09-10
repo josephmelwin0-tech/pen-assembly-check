@@ -68,15 +68,27 @@ def main():
     for class_name in class_names:
         src = os.path.join(REFERENCE_DIR, class_name)
         images = [f for f in os.listdir(src) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
-        random.shuffle(images)
 
-        n_val = max(1, int(len(images) * VAL_SPLIT))
-        val_files = images[:n_val]
-        train_files = images[n_val:]
+        # Separate video frames (already temporally split) from static photos
+        vid_train = [f for f in images if f.startswith("vid_train_")]
+        vid_val = [f for f in images if f.startswith("vid_val_")]
+        static_photos = [f for f in images if not f.startswith("vid_")]
+
+        # Split static photos randomly if present
+        random.shuffle(static_photos)
+        n_static_val = int(len(static_photos) * VAL_SPLIT) if static_photos else 0
+        static_val = static_photos[:n_static_val]
+        static_train = static_photos[n_static_val:]
+
+        train_files = vid_train + static_train
+        val_files = vid_val + static_val
 
         process_and_save_files(train_files, src, os.path.join(OUTPUT_DIR, "train", class_name))
         process_and_save_files(val_files, src, os.path.join(OUTPUT_DIR, "val", class_name))
-        print(f"{class_name}: {len(train_files)} train, {len(val_files)} val")
+        print(
+            f"{class_name}: {len(train_files)} train ({len(vid_train)} vid + {len(static_train)} static), "
+            f"{len(val_files)} val ({len(vid_val)} vid + {len(static_val)} static)"
+        )
 
         test_src = os.path.join(TEST_DIR, class_name)
         if os.path.isdir(test_src):

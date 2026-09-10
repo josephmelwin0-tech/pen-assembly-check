@@ -54,6 +54,7 @@ def main():
     print("  [2] Start Live Webcam Inspection (live_demo.py)")
     print("  [3] Retrain YOLO Models (train_classifier.py)")
     print("  [4] Re-generate Cropped Datasets (prepare_dataset.py)")
+    print("  [5] Extract Frames from Videos (extract_frames.py)")
     print("  [q] Quit")
     print("=" * 60)
 
@@ -76,6 +77,9 @@ def main():
     elif choice == "4":
         from prepare_dataset import main as run_prep
         run_prep()
+    elif choice == "5":
+        from extract_frames import main as run_extract
+        run_extract()
     else:
         print("Exiting.")
 

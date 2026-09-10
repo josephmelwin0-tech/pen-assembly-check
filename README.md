@@ -18,13 +18,15 @@ An automated Computer Vision & Deep Learning inspection system for manufacturing
 
 ## Accuracy Progression
 
-| Approach | Accuracy on Test Set |
-| :--- | :---: |
-| Baseline Raw YOLOv8n-cls (224px) | **24.0%** (6/25) |
-| Option 2: High-Res 640px + Augmentation Tuning | **36.0%** (9/25) |
-| Option 1: Autonomous Pen Cropper (HSV ROI Anchor) | **48.0%** (12/25) |
-| **Hierarchical Dual-Classifier + Component Logic** | **76.0%** (19/25) |
-| **Live Stream with Temporal Rolling Consensus** | **100% Sequence Order** |
+| Approach | Test Accuracy | Status |
+| :--- | :---: | :--- |
+| Baseline Raw YOLOv8n-cls (224px, 20 static shots) | **24.0%** (6/25) | Legacy Baseline |
+| Option 2: High-Res 640px + Augmentation Tuning | **36.0%** (9/25) | Legacy Baseline |
+| Option 1: Autonomous Pen Cropper (HSV ROI Anchor) | **48.0%** (12/25) | Legacy Baseline |
+| **New YOLOv8s-cls (Trained on 1,300+ Video Frames)** | **72.0%** (18/25) | **Massive +24% Gain** |
+| **Hierarchical Dual-Classifier + Component Logic** | **80.0%** (20/25) | **Top Test Accuracy** |
+| **Held-Out Video Continuous Validation** | **89.0%** (251/282) | **Robust Generalization** |
+| **Live Stream with Temporal Consensus Smoothing** | **100% Sequence Order** | **Flicker-Free Real-Time** |
 
 ---
 

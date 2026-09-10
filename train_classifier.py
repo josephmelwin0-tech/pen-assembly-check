@@ -18,15 +18,16 @@ def main():
             "the CUDA build of torch (see setup notes) rather than the CPU-only build."
         )
 
-    # yolov8n-cls.pt is the smallest classification model — downloads automatically
-    # the first time you run this. Plenty for 5 classes / ~100 images.
-    model = YOLO("yolov8n-cls.pt")
+    # yolov8s-cls.pt (small) provides double the parameters of nano (~6.4M vs ~3.2M),
+    # ideal for distinguishing fine-grained states (e.g. bare refill vs empty barrel)
+    # when trained on ~1,000+ diverse video frames without overfitting.
+    model = YOLO("yolov8s-cls.pt")
 
     model.train(
         data="yolo_dataset",   # folder with train/ and val/ subfolders from prepare_dataset.py
-        epochs=80,             # small dataset trains fast; patience below stops early if needed
+        epochs=80,             # patience below stops early once validation loss flattens
         imgsz=448,             # ideal resolution for cropped pen images
-        batch=8,
+        batch=16,              # batch 16 provides stable gradient estimates with 1k+ images
         device=device,
         patience=25,           # allow more epochs for convergence
         erasing=0.0,           # disable random erasing so tiny pen parts aren't blacked out

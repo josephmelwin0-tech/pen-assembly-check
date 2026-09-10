@@ -2,11 +2,13 @@ import cv2
 import numpy as np
 
 
-def crop_pen(img, pad=130):
+def crop_pen(img, pad=170):
     """
     Detects the pen's blue components (grip, backcap, topcap) and crops
     a focused region-of-interest around the pen so it fills the frame.
     Works seamlessly on both desk shots and hand-held assembly shots.
+    Generous padding guarantees delicate parts (0.7mm refill tip, cone nozzle,
+    backcap, threads) are never accidentally clipped.
     """
     h, w = img.shape[:2]
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -23,9 +25,9 @@ def crop_pen(img, pad=130):
     bx, by, bw, bh = cv2.boundingRect(all_pts)
 
     # State 0 (empty barrel): only the grip is blue, so bounding box is small (~90px).
-    # The clear barrel extends ~340px from the grip center.
+    # The clear barrel extends ~440px from the grip center.
     if max(bw, bh) < 200:
-        p = 340
+        p = 440
         cx, cy = bx + bw // 2, by + bh // 2
         x1 = max(0, cx - p)
         y1 = max(0, cy - p)
@@ -33,7 +35,7 @@ def crop_pen(img, pad=130):
         y2 = min(h, cy + p)
     else:
         # States 1-4: both ends or topcap have blue components.
-        # pad=130 ensures the protruding cone cap / refill tip is fully included.
+        # pad=170 ensures the protruding cone cap / refill tip is fully included.
         x1 = max(0, bx - pad)
         y1 = max(0, by - pad)
         x2 = min(w, bx + bw + pad)

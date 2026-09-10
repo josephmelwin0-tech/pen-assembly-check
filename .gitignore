@@ -1,4 +1,4 @@
-﻿# Virtual environment
+# Virtual environment
 .venv/
 venv/
 env/
@@ -14,9 +14,17 @@ __pycache__/
 # Pretrained base weights (Ultralytics auto-downloads these)
 yolov8n.pt
 yolov8n-cls.pt
+yolov8s-cls.pt
 
-# Temporary demo outputs
+# Raw video recordings
+videos/
+*.mp4
+*.mov
+*.avi
+
+# Temporary demo outputs and generated datasets
 demo_output.jpg
+yolo_dataset/
 
 # IDE & Editor configs
 .idea/
